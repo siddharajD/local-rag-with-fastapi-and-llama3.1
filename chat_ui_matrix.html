@@ -1,0 +1,1306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sids Local RAG</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --matrix-green: #00ff00;
+            --matrix-dark-green: #00aa00;
+            --matrix-bg: #000000;
+            --matrix-lighter-bg: #0a0a0a;
+            --matrix-border: #00cc00;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: var(--matrix-bg);
+            color: var(--matrix-green);
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Matrix rain animation background */
+        #matrix-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            opacity: 0.02;
+            pointer-events: none;
+        }
+
+        .app-container {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            height: 100vh;
+            padding: 10px;
+            gap: 10px;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 350px;
+            background: var(--matrix-lighter-bg);
+            border: 1px solid var(--matrix-border);
+            border-radius: 5px;
+            padding: 15px;
+            overflow-y: auto;
+        }
+
+        .sidebar h2 {
+            color: var(--matrix-green);
+            margin-bottom: 15px;
+            font-size: 18px;
+            border-bottom: 1px solid var(--matrix-dark-green);
+            padding-bottom: 8px;
+        }
+
+        .menu-section {
+            margin-bottom: 20px;
+        }
+
+        .menu-header {
+            background: var(--matrix-bg);
+            color: var(--matrix-green);
+            padding: 10px;
+            cursor: pointer;
+            border: 1px solid var(--matrix-border);
+            border-radius: 3px;
+            margin-bottom: 5px;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.2s;
+        }
+
+        .menu-header:hover {
+            background: var(--matrix-dark-green);
+            color: var(--matrix-bg);
+        }
+
+        .menu-header.active {
+            background: var(--matrix-green);
+            color: var(--matrix-bg);
+        }
+
+        .menu-content {
+            display: none;
+            padding: 10px;
+            background: rgba(0, 255, 0, 0.03);
+            border: 1px solid var(--matrix-dark-green);
+            border-top: none;
+            border-radius: 0 0 3px 3px;
+        }
+
+        .menu-content.active {
+            display: block;
+        }
+
+        .menu-item {
+            padding: 8px;
+            margin-bottom: 5px;
+            cursor: pointer;
+            border: 1px solid var(--matrix-dark-green);
+            border-radius: 3px;
+            transition: background 0.2s;
+            font-size: 12px;
+        }
+
+        .menu-item:hover {
+            background: var(--matrix-dark-green);
+            border-color: var(--matrix-green);
+        }
+
+        .status-panel {
+            background: rgba(0, 255, 0, 0.03);
+            border: 1px solid var(--matrix-border);
+            padding: 10px;
+            border-radius: 3px;
+            margin-bottom: 15px;
+        }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            font-size: 13px;
+        }
+
+        .status-label {
+            color: var(--matrix-dark-green);
+        }
+
+        .status-value {
+            color: var(--matrix-green);
+        }
+
+        .status-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+
+        .status-dot.online {
+            background: var(--matrix-green);
+        }
+
+        .status-dot.offline {
+            background: #ff0000;
+        }
+
+        /* Main Chat */
+        .chat-container {
+            flex: 1;
+            background: var(--matrix-lighter-bg);
+            border: 1px solid var(--matrix-border);
+            border-radius: 5px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chat-header {
+            background: var(--matrix-bg);
+            color: var(--matrix-green);
+            padding: 15px;
+            border-bottom: 1px solid var(--matrix-border);
+        }
+
+        .chat-header h1 {
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+
+        .chat-header p {
+            font-size: 12px;
+            color: var(--matrix-dark-green);
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+            background: var(--matrix-bg);
+        }
+
+        .message {
+            margin-bottom: 15px;
+            animation: fadeIn 0.3s;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message-header {
+            color: var(--matrix-dark-green);
+            font-size: 11px;
+            margin-bottom: 5px;
+        }
+
+        .message-content {
+            padding: 12px;
+            border: 1px solid var(--matrix-dark-green);
+            border-radius: 3px;
+            line-height: 1.8;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .message.user .message-content {
+            background: rgba(0, 255, 0, 0.1);
+            border-color: var(--matrix-green);
+            margin-left: 50px;
+        }
+
+        .message.assistant .message-content {
+            background: rgba(0, 255, 0, 0.03);
+            border-left: 3px solid var(--matrix-green);
+            margin-right: 50px;
+        }
+
+        .message.system .message-content {
+            background: rgba(0, 170, 0, 0.1);
+            border-color: var(--matrix-dark-green);
+            font-style: italic;
+        }
+
+        .message-content p {
+            margin-bottom: 12px;
+        }
+
+        .message-content p:last-child {
+            margin-bottom: 0;
+        }
+
+        .message-sources {
+            margin-top: 10px;
+            padding: 8px;
+            background: rgba(0, 170, 0, 0.2);
+            border-left: 2px solid var(--matrix-dark-green);
+            font-size: 11px;
+        }
+
+        .typing-indicator {
+            display: none;
+        }
+
+        .typing-indicator.active {
+            display: flex;
+            gap: 5px;
+            padding: 10px;
+        }
+
+        .typing-dot {
+            width: 6px;
+            height: 6px;
+            background: var(--matrix-green);
+            border-radius: 50%;
+            animation: typing 1.4s infinite;
+        }
+
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes typing {
+            0%, 60%, 100% { transform: scale(1); opacity: 0.5; }
+            30% { transform: scale(1.5); opacity: 1; }
+        }
+
+        .chat-input-container {
+            padding: 15px;
+            background: var(--matrix-bg);
+            border-top: 1px solid var(--matrix-border);
+        }
+
+        .chat-input-wrapper {
+            display: flex;
+            gap: 10px;
+        }
+
+        #messageInput {
+            flex: 1;
+            padding: 10px;
+            background: var(--matrix-bg);
+            color: var(--matrix-green);
+            border: 1px solid var(--matrix-border);
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            resize: none;
+            max-height: 100px;
+        }
+
+        #messageInput:focus {
+            outline: none;
+            border-color: var(--matrix-green);
+        }
+
+        #messageInput::placeholder {
+            color: var(--matrix-dark-green);
+        }
+
+        .btn {
+            padding: 10px 20px;
+            background: var(--matrix-bg);
+            color: var(--matrix-green);
+            border: 1px solid var(--matrix-border);
+            border-radius: 3px;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+
+        .btn:hover:not(:disabled) {
+            background: var(--matrix-green);
+            color: var(--matrix-bg);
+        }
+
+        .btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .chat-footer {
+            padding: 10px;
+            background: var(--matrix-bg);
+            border-top: 1px solid var(--matrix-dark-green);
+            text-align: center;
+            font-size: 11px;
+            color: var(--matrix-dark-green);
+        }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: var(--matrix-bg);
+            border: 2px solid var(--matrix-border);
+            padding: 20px;
+            border-radius: 5px;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-content h2 {
+            color: var(--matrix-green);
+            margin-bottom: 15px;
+        }
+
+        .modal-content pre {
+            background: rgba(0, 255, 0, 0.03);
+            padding: 10px;
+            border: 1px solid var(--matrix-dark-green);
+            border-radius: 3px;
+            overflow-x: auto;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .input-group {
+            margin: 10px 0;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: var(--matrix-dark-green);
+            font-size: 12px;
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 8px;
+            background: var(--matrix-bg);
+            color: var(--matrix-green);
+            border: 1px solid var(--matrix-border);
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: var(--matrix-green);
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--matrix-bg);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--matrix-dark-green);
+            border: 1px solid var(--matrix-green);
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--matrix-green);
+        }
+
+        .file-upload-input {
+            display: none;
+        }
+
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px;
+            background: var(--matrix-bg);
+            border: 2px solid var(--matrix-border);
+            border-radius: 3px;
+            display: none;
+            z-index: 2000;
+            animation: slideIn 0.3s;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(400px); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        .notification.active {
+            display: block;
+        }
+
+        .notification.success {
+            border-color: var(--matrix-green);
+        }
+
+        .notification.error {
+            border-color: #ff0000;
+            color: #ff0000;
+        }
+
+        @media (max-width: 1024px) {
+            .sidebar {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Matrix rain background -->
+    <canvas id="matrix-bg"></canvas>
+
+    <div class="app-container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <h2>▸ SYSTEM CONTROL PANEL</h2>
+            
+            <!-- Status Panel -->
+            <div class="status-panel">
+                <div class="status-item">
+                    <span class="status-label">CONNECTION:</span>
+                    <span class="status-value" id="connectionStatus">
+                        <span class="status-dot offline"></span>CHECKING...
+                    </span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">SYSTEM:</span>
+                    <span class="status-value" id="systemStatus">NOT READY</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">DOCUMENTS:</span>
+                    <span class="status-value" id="documentCount">0</span>
+                </div>
+            </div>
+
+            <!-- General Menu -->
+            <div class="menu-section">
+                <div class="menu-header" onclick="toggleMenu('general')">
+                    <span>▸ GENERAL</span>
+                    <span id="general-arrow">▼</span>
+                </div>
+                <div class="menu-content" id="general-menu">
+                    <div class="menu-item" onclick="apiCall('root')">
+                        › GET / - API Routes
+                    </div>
+                    <div class="menu-item" onclick="apiCall('health')">
+                        › GET /health - System Health
+                    </div>
+                    <div class="menu-item" onclick="apiCall('formats')">
+                        › GET /supported-formats
+                    </div>
+                </div>
+            </div>
+
+            <!-- Document Management -->
+            <div class="menu-section">
+                <div class="menu-header" onclick="toggleMenu('documents')">
+                    <span>▸ DOCUMENT MANAGEMENT</span>
+                    <span id="documents-arrow">▼</span>
+                </div>
+                <div class="menu-content" id="documents-menu">
+                    <div class="menu-item" onclick="apiCall('listDocs')">
+                        › GET /documents - List All
+                    </div>
+                    <div class="menu-item" onclick="uploadDocument()">
+                        › POST /upload - Upload File
+                    </div>
+                    <div class="menu-item" onclick="deleteDocument()">
+                        › DELETE /documents/{file}
+                    </div>
+                </div>
+            </div>
+
+            <!-- System Management -->
+            <div class="menu-section">
+                <div class="menu-header" onclick="toggleMenu('system')">
+                    <span>▸ SYSTEM MANAGEMENT</span>
+                    <span id="system-arrow">▼</span>
+                </div>
+                <div class="menu-content" id="system-menu">
+                    <div class="menu-item" onclick="apiCall('initialize')">
+                        › POST /initialize - Process Docs
+                    </div>
+                    <div class="menu-item" onclick="apiCall('reset')">
+                        › DELETE /reset - Reset System
+                    </div>
+                </div>
+            </div>
+
+            <!-- Conversation History -->
+            <div class="menu-section">
+                <div class="menu-header" onclick="toggleMenu('conversations')">
+                    <span>▸ CONVERSATION HISTORY</span>
+                    <span id="conversations-arrow">▼</span>
+                </div>
+                <div class="menu-content" id="conversations-menu">
+                    <div class="menu-item" onclick="apiCall('listSessions')">
+                        › GET /conversations - List All
+                    </div>
+                    <div class="menu-item" onclick="getSessionHistory()">
+                        › GET /conversations/{id}
+                    </div>
+                    <div class="menu-item" onclick="deleteSession()">
+                        › DELETE /conversations/{id}
+                    </div>
+                    <div class="menu-item" onclick="apiCall('clearAllSessions')">
+                        › DELETE /conversations - Clear All
+                    </div>
+                </div>
+            </div>
+
+            <div class="menu-section">
+                <div class="menu-header" onclick="toggleMenu('debug')">
+                    <span>▸ DEBUG / TROUBLESHOOTING</span>
+                    <span id="debug-arrow">▼</span>
+                </div>
+                <div class="menu-content" id="debug-menu">
+                    <div class="menu-item" onclick="debugDocuments()">
+                        › Debug: Show All Documents
+                    </div>
+                    <div class="menu-item" onclick="debugSearch()">
+                        › Debug: Test Search Query
+                    </div>
+                    <div class="menu-item" onclick="verifyInitialization()">
+                        › Debug: Verify Initialization
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chat Actions -->
+            <div class="menu-section">
+                <button class="btn" onclick="newConversation()" style="width: 100%; margin-bottom: 10px;">
+                    NEW CHAT
+                </button>
+                <button class="btn" onclick="exportChat()" style="width: 100%;">
+                    EXPORT CHAT
+                </button>
+            </div>
+        </div>
+
+        <!-- Main Chat -->
+        <div class="chat-container">
+            <div class="chat-header">
+                <h1>▸ SIDS LOCAL RAG</h1>
+                <p id="sessionInfo">LOCAL AI DOCUMENT ASSISTANT v2.0</p>
+            </div>
+
+            <div class="chat-messages" id="chatMessages">
+                <div class="message system">
+                    <div class="message-header">[SYSTEM] INITIALIZATION</div>
+                    <div class="message-content">WELCOME TO SIDS LOCAL RAG
+
+ACCESS GRANTED
+AI INTERFACE: ACTIVE
+LOCAL PROCESSING: ENABLED
+
+INSTRUCTIONS:
+1. Use left panel to manage documents
+2. Upload files via DOCUMENT MANAGEMENT
+3. Initialize system to process data
+4. Query the knowledge base
+5. All data remains local and private
+
+TYPE YOUR QUERY TO BEGIN...</div>
+                </div>
+            </div>
+
+            <div class="chat-input-container">
+                <div class="chat-input-wrapper">
+                    <textarea 
+                        id="messageInput" 
+                        placeholder="ENTER QUERY..." 
+                        rows="1"
+                    ></textarea>
+                    <button id="sendButton" class="btn" onclick="sendMessage()">TRANSMIT</button>
+                </div>
+            </div>
+
+            <div class="chat-footer">
+                POWERED BY OLLAMA • 100% LOCAL • PRIVATE & SECURE
+            </div>
+        </div>
+    </div>
+
+    <!-- File Upload Input (Hidden) -->
+    <input type="file" id="fileInput" class="file-upload-input" multiple accept=".pdf,.txt,.docx,.xlsx,.xls,.csv,.md,.html,.pptx,.ppt">
+
+    <!-- Modal for inputs -->
+    <div class="modal" id="modal">
+        <div class="modal-content">
+            <h2 id="modalTitle">INPUT REQUIRED</h2>
+            <div id="modalBody"></div>
+            <div class="modal-buttons">
+                <button class="btn" onclick="modalSubmit()">EXECUTE</button>
+                <button class="btn" onclick="closeModal()">CANCEL</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification -->
+    <div class="notification" id="notification">
+        <span id="notificationText">NOTIFICATION</span>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000';
+        let sessionId = null;
+        let isStreaming = false;
+        let currentModal = null;
+
+        // Matrix rain animation
+        const canvas = document.getElementById('matrix-bg');
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        const chars = 'ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        const fontSize = 14;
+        const columns = canvas.width / fontSize;
+        const drops = Array(Math.floor(columns)).fill(1);
+
+        function drawMatrix() {
+            ctx.fillStyle = 'rgba(13, 2, 8, 0.05)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.fillStyle = '#00ff41';
+            ctx.font = fontSize + 'px monospace';
+            
+            for (let i = 0; i < drops.length; i++) {
+                const text = chars[Math.floor(Math.random() * chars.length)];
+                ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+                
+                if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) {
+                    drops[i] = 0;
+                }
+                drops[i]++;
+            }
+        }
+
+        setInterval(drawMatrix, 35);
+
+        // Auto-resize textarea
+        const messageInput = document.getElementById('messageInput');
+        messageInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 100) + 'px';
+        });
+
+        // Send on Enter
+        messageInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        // Initialize
+        window.addEventListener('load', () => {
+            refreshStatus();
+            setInterval(refreshStatus, 5000);
+        });
+
+        // === Menu Functions ===
+        function toggleMenu(menuId) {
+            const menu = document.getElementById(menuId + '-menu');
+            const arrow = document.getElementById(menuId + '-arrow');
+            const header = arrow.parentElement;
+            
+            menu.classList.toggle('active');
+            header.classList.toggle('active');
+            arrow.textContent = menu.classList.contains('active') ? '▲' : '▼';
+        }
+
+        // === Status Functions ===
+        async function refreshStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/health`);
+                if (response.ok) {
+                    const health = await response.json();
+                    updateStatus(health);
+                } else {
+                    updateStatus(null);
+                }
+            } catch (error) {
+                updateStatus(null);
+            }
+        }
+
+        function updateStatus(health) {
+            const connectionStatus = document.getElementById('connectionStatus');
+            const systemStatus = document.getElementById('systemStatus');
+            const documentCount = document.getElementById('documentCount');
+            
+            if (health) {
+                connectionStatus.innerHTML = '<span class="status-dot online"></span>ONLINE';
+                systemStatus.textContent = health.system_ready ? 'READY' : 'NOT INITIALIZED';
+                documentCount.textContent = health.documents_count;
+            } else {
+                connectionStatus.innerHTML = '<span class="status-dot offline"></span>OFFLINE';
+                systemStatus.textContent = 'DISCONNECTED';
+                documentCount.textContent = '?';
+            }
+        }
+
+        // === Debug Functions ===
+        async function debugDocuments() {
+            addSystemMessage('[DEBUG] Checking uploaded documents...');
+            
+            try {
+                const response = await fetch(`${API_BASE}/documents`);
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    let message = `[DEBUG] DOCUMENT CHECK\n\n`;
+                    message += `Total Documents: ${data.count}\n`;
+                    message += `Total Size: ${data.total_size_mb} MB\n\n`;
+                    
+                    if (data.documents && data.documents.length > 0) {
+                        message += `FILES FOUND:\n`;
+                        data.documents.forEach((doc, i) => {
+                            message += `${i + 1}. ${doc.name}\n`;
+                            message += `   Type: ${doc.type}\n`;
+                            message += `   Size: ${doc.size_kb} KB\n`;
+                            message += `   Modified: ${doc.modified}\n\n`;
+                        });
+                    } else {
+                        message += `⚠️ NO DOCUMENTS FOUND!\n`;
+                        message += `Upload documents using DOCUMENT MANAGEMENT menu.`;
+                    }
+                    
+                    addSystemMessage(message);
+                } else {
+                    addSystemMessage('[DEBUG ERROR] Could not fetch documents');
+                }
+            } catch (error) {
+                addSystemMessage(`[DEBUG ERROR] ${error.message}`);
+            }
+        }
+
+        async function debugSearch() {
+            showInputModal('DEBUG: TEST SEARCH', 'Enter search keywords (e.g., "electronics"):', async (keywords) => {
+                addSystemMessage(`[DEBUG] Searching for: "${keywords}"\n\nThis will show what documents the system finds...`);
+                
+                // This is a simplified test - you'll ask a question and see what it retrieves
+                const testQuestion = `Show me information about ${keywords}`;
+                
+                try {
+                    const response = await fetch(`${API_BASE}/ask`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            question: testQuestion,
+                            session_id: null  // New session for testing
+                        })
+                    });
+                    
+                    if (response.ok) {
+                        const result = await response.json();
+                        
+                        let message = `[DEBUG] SEARCH RESULTS\n\n`;
+                        message += `Question: ${testQuestion}\n\n`;
+                        message += `Sources Retrieved: ${result.sources ? result.sources.length : 0}\n\n`;
+                        
+                        if (result.sources && result.sources.length > 0) {
+                            message += `RETRIEVED CHUNKS:\n`;
+                            result.sources.forEach((source, i) => {
+                                message += `\n${i + 1}. Preview:\n`;
+                                message += `${source.content_preview}\n`;
+                                message += `---\n`;
+                            });
+                        } else {
+                            message += `⚠️ NO SOURCES RETRIEVED!\n`;
+                            message += `This means the vector search found nothing.`;
+                        }
+                        
+                        addSystemMessage(message);
+                    }
+                } catch (error) {
+                    addSystemMessage(`[DEBUG ERROR] ${error.message}`);
+                }
+            });
+        }
+
+        async function verifyInitialization() {
+            addSystemMessage('[DEBUG] Verifying system initialization...');
+            
+            try {
+                const response = await fetch(`${API_BASE}/health`);
+                if (response.ok) {
+                    const health = await response.json();
+                    
+                    let message = `[DEBUG] SYSTEM CHECK\n\n`;
+                    message += `Status: ${health.status}\n`;
+                    message += `System Ready: ${health.system_ready}\n`;
+                    message += `Documents: ${health.documents_count}\n\n`;
+                    
+                    if (!health.system_ready) {
+                        message += `⚠️ SYSTEM NOT INITIALIZED!\n\n`;
+                        message += `SOLUTION:\n`;
+                        message += `1. Upload documents (DOCUMENT MANAGEMENT)\n`;
+                        message += `2. Click SYSTEM MANAGEMENT → Initialize\n`;
+                        message += `3. Wait 2-5 minutes for processing\n`;
+                    } else if (health.documents_count === 0) {
+                        message += `⚠️ NO DOCUMENTS UPLOADED!\n\n`;
+                        message += `SOLUTION:\n`;
+                        message += `1. Upload documents using DOCUMENT MANAGEMENT\n`;
+                        message += `2. Re-initialize the system\n`;
+                    } else {
+                        message += `✅ SYSTEM APPEARS READY\n\n`;
+                        message += `If you're still getting wrong answers:\n`;
+                        message += `1. Check if correct documents are uploaded\n`;
+                        message += `2. Try more specific questions\n`;
+                        message += `3. Re-initialize the system\n`;
+                    }
+                    
+                    addSystemMessage(message);
+                }
+            } catch (error) {
+                addSystemMessage(`[DEBUG ERROR] ${error.message}`);
+            }
+        }
+
+        // === API Call Functions ===
+        async function apiCall(action) {
+            addSystemMessage(`[EXECUTING] ${action.toUpperCase()}`);
+            
+            try {
+                let response;
+                switch(action) {
+                    case 'root':
+                        response = await fetch(`${API_BASE}/`);
+                        break;
+                    case 'health':
+                        response = await fetch(`${API_BASE}/health`);
+                        break;
+                    case 'formats':
+                        response = await fetch(`${API_BASE}/supported-formats`);
+                        break;
+                    case 'listDocs':
+                        response = await fetch(`${API_BASE}/documents`);
+                        break;
+                    case 'initialize':
+                        response = await fetch(`${API_BASE}/initialize`, { method: 'POST' });
+                        break;
+                    case 'reset':
+                        if (!confirm('CONFIRM: Reset entire system?')) return;
+                        response = await fetch(`${API_BASE}/reset`, { method: 'DELETE' });
+                        break;
+                    case 'listSessions':
+                        response = await fetch(`${API_BASE}/conversations`);
+                        break;
+                    case 'clearAllSessions':
+                        if (!confirm('CONFIRM: Clear all conversation history?')) return;
+                        response = await fetch(`${API_BASE}/conversations`, { method: 'DELETE' });
+                        break;
+                }
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    displayApiResponse(action, data);
+                    refreshStatus();
+                } else {
+                    addSystemMessage(`[ERROR] ${response.status}: ${response.statusText}`);
+                }
+            } catch (error) {
+                addSystemMessage(`[ERROR] ${error.message}`);
+            }
+        }
+
+        function displayApiResponse(action, data) {
+            const formatted = JSON.stringify(data, null, 2);
+            const content = `[RESPONSE] ${action.toUpperCase()}
+
+${formatted}`;
+            addSystemMessage(content);
+        }
+
+        // === Document Functions ===
+        function uploadDocument() {
+            document.getElementById('fileInput').click();
+        }
+
+        document.getElementById('fileInput').addEventListener('change', async (e) => {
+            const files = e.target.files;
+            if (!files.length) return;
+            
+            for (let file of files) {
+                addSystemMessage(`[UPLOADING] ${file.name}`);
+                
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                try {
+                    const response = await fetch(`${API_BASE}/upload`, {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (response.ok) {
+                        const result = await response.json();
+                        addSystemMessage(`[SUCCESS] ${file.name} uploaded (${result.size_kb} KB)`);
+                    } else {
+                        addSystemMessage(`[ERROR] Failed to upload ${file.name}`);
+                    }
+                } catch (error) {
+                    addSystemMessage(`[ERROR] ${error.message}`);
+                }
+            }
+            
+            e.target.value = '';
+            refreshStatus();
+        });
+
+        function deleteDocument() {
+            showInputModal('DELETE DOCUMENT', 'Enter filename:', async (filename) => {
+                try {
+                    const response = await fetch(`${API_BASE}/documents/${filename}`, {
+                        method: 'DELETE'
+                    });
+                    
+                    if (response.ok) {
+                        const result = await response.json();
+                        addSystemMessage(`[SUCCESS] ${result.message}`);
+                        refreshStatus();
+                    } else {
+                        addSystemMessage(`[ERROR] File not found`);
+                    }
+                } catch (error) {
+                    addSystemMessage(`[ERROR] ${error.message}`);
+                }
+            });
+        }
+
+        function getSessionHistory() {
+            showInputModal('GET SESSION HISTORY', 'Enter session ID:', async (sessionId) => {
+                try {
+                    const response = await fetch(`${API_BASE}/conversations/${sessionId}`);
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        displayApiResponse('session_history', data);
+                    } else {
+                        addSystemMessage(`[ERROR] Session not found`);
+                    }
+                } catch (error) {
+                    addSystemMessage(`[ERROR] ${error.message}`);
+                }
+            });
+        }
+
+        function deleteSession() {
+            showInputModal('DELETE SESSION', 'Enter session ID:', async (sessionId) => {
+                try {
+                    const response = await fetch(`${API_BASE}/conversations/${sessionId}`, {
+                        method: 'DELETE'
+                    });
+                    
+                    if (response.ok) {
+                        const result = await response.json();
+                        addSystemMessage(`[SUCCESS] ${result.message}`);
+                    } else {
+                        addSystemMessage(`[ERROR] Session not found`);
+                    }
+                } catch (error) {
+                    addSystemMessage(`[ERROR] ${error.message}`);
+                }
+            });
+        }
+
+        // === Chat Functions ===
+        async function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            
+            if (!message || isStreaming) return;
+            
+            input.value = '';
+            input.style.height = 'auto';
+            
+            addMessage('user', message);
+            showTypingIndicator();
+            
+            isStreaming = true;
+            document.getElementById('sendButton').disabled = true;
+            
+            try {
+                const response = await fetch(`${API_BASE}/ask/stream`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        question: message,
+                        session_id: sessionId
+                    })
+                });
+
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+                if (!sessionId && response.headers.get('X-Session-ID')) {
+                    sessionId = response.headers.get('X-Session-ID');
+                    updateSessionInfo();
+                }
+
+                hideTypingIndicator();
+                
+                const messageDiv = addMessage('assistant', '', true);
+                const contentDiv = messageDiv.querySelector('.message-content');
+                
+                let fullAnswer = '';
+                let sources = [];
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                while (true) {
+                    const {done, value} = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n');
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.slice(6));
+                                
+                                if (data.sources?.length > 0) sources = data.sources;
+                                
+                                if (data.answer_chunk) {
+                                    fullAnswer += data.answer_chunk;
+                                    contentDiv.textContent = formatResponse(fullAnswer);
+                                    scrollToBottom();
+                                }
+                                
+                                if (data.done) {
+                                    if (sources.length > 0) addSourcesToMessage(messageDiv, sources);
+                                    break;
+                                }
+                            } catch (e) {}
+                        }
+                    }
+                }
+
+            } catch (error) {
+                hideTypingIndicator();
+                addMessage('assistant', `[ERROR] ${error.message}`);
+            } finally {
+                isStreaming = false;
+                document.getElementById('sendButton').disabled = false;
+                input.focus();
+            }
+        }
+
+        function formatResponse(text) {
+            // Format response for human readability
+            // Add proper paragraph breaks
+            let formatted = text.trim();
+            
+            // Replace double newlines with paragraph breaks
+            formatted = formatted.replace(/\n\n/g, '\n\n');
+            
+            // Add spacing after periods followed by capital letters
+            formatted = formatted.replace(/\. ([A-Z])/g, '.\n\n$1');
+            
+            // Format lists
+            formatted = formatted.replace(/(\d+\.|•|-) /g, '\n$1 ');
+            
+            return formatted;
+        }
+
+        function addMessage(role, content, streaming = false) {
+            const messagesDiv = document.getElementById('chatMessages');
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${role}`;
+            
+            const header = document.createElement('div');
+            header.className = 'message-header';
+            header.textContent = role === 'user' ? '[USER] QUERY' : '[ASSISTANT] RESPONSE';
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            contentDiv.textContent = content;
+            
+            messageDiv.appendChild(header);
+            messageDiv.appendChild(contentDiv);
+            
+            messagesDiv.appendChild(messageDiv);
+            
+            if (!streaming) scrollToBottom();
+            
+            return messageDiv;
+        }
+
+        function addSystemMessage(content) {
+            const messagesDiv = document.getElementById('chatMessages');
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message system';
+            
+            const header = document.createElement('div');
+            header.className = 'message-header';
+            header.textContent = '[SYSTEM] STATUS';
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            contentDiv.textContent = content;
+            
+            messageDiv.appendChild(header);
+            messageDiv.appendChild(contentDiv);
+            
+            messagesDiv.appendChild(messageDiv);
+            scrollToBottom();
+        }
+
+        function addSourcesToMessage(messageDiv, sources) {
+            const sourcesDiv = document.createElement('div');
+            sourcesDiv.className = 'message-sources';
+            sourcesDiv.textContent = `[SOURCES] ${sources.length} DOCUMENT${sources.length > 1 ? 'S' : ''} REFERENCED`;
+            messageDiv.appendChild(sourcesDiv);
+        }
+
+        function showTypingIndicator() {
+            const messagesDiv = document.getElementById('chatMessages');
+            const indicator = document.createElement('div');
+            indicator.className = 'typing-indicator active';
+            indicator.id = 'typingIndicator';
+            indicator.innerHTML = '<div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>';
+            messagesDiv.appendChild(indicator);
+            scrollToBottom();
+        }
+
+        function hideTypingIndicator() {
+            document.getElementById('typingIndicator')?.remove();
+        }
+
+        function scrollToBottom() {
+            const messagesDiv = document.getElementById('chatMessages');
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function updateSessionInfo() {
+            document.getElementById('sessionInfo').textContent = 
+                `SESSION: ${sessionId.substring(0, 16)}... | ${new Date().toLocaleTimeString()}`;
+        }
+
+        function newConversation() {
+            if (confirm('CONFIRM: Start new conversation?')) {
+                sessionId = null;
+                document.getElementById('chatMessages').innerHTML = '';
+                addSystemMessage('NEW SESSION INITIATED\n\nALL PREVIOUS CONTEXT CLEARED\nREADY FOR NEW QUERIES');
+            }
+        }
+
+        function exportChat() {
+            const messages = document.querySelectorAll('.message');
+            let transcript = 'SIDS LOCAL RAG - CHAT TRANSCRIPT\n';
+            transcript += '='.repeat(60) + '\n\n';
+            
+            messages.forEach(msg => {
+                const header = msg.querySelector('.message-header')?.textContent || '';
+                const content = msg.querySelector('.message-content')?.textContent || '';
+                transcript += `${header}\n${content}\n\n${'='.repeat(60)}\n\n`;
+            });
+            
+            const blob = new Blob([transcript], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `sids-rag-chat-${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.txt`;
+            a.click();
+            
+            showNotification('CHAT EXPORTED', 'success');
+        }
+
+        // === Modal Functions ===
+        function showInputModal(title, label, callback) {
+            const modal = document.getElementById('modal');
+            const modalTitle = document.getElementById('modalTitle');
+            const modalBody = document.getElementById('modalBody');
+            
+            modalTitle.textContent = title;
+            modalBody.innerHTML = `
+                <div class="input-group">
+                    <label>${label}</label>
+                    <input type="text" id="modalInput" autocomplete="off">
+                </div>
+            `;
+            
+            currentModal = callback;
+            modal.classList.add('active');
+            
+            setTimeout(() => document.getElementById('modalInput').focus(), 100);
+        }
+
+        function modalSubmit() {
+            const input = document.getElementById('modalInput');
+            if (input && currentModal) {
+                const value = input.value.trim();
+                if (value) {
+                    currentModal(value);
+                    closeModal();
+                }
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('modal').classList.remove('active');
+            currentModal = null;
+        }
+
+        function showNotification(text, type = 'success') {
+            const notification = document.getElementById('notification');
+            const textEl = document.getElementById('notificationText');
+            
+            notification.className = `notification ${type} active`;
+            textEl.textContent = text;
+            
+            setTimeout(() => {
+                notification.classList.remove('active');
+            }, 3000);
+        }
+
+        // Enter key in modal
+        document.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && document.getElementById('modal').classList.contains('active')) {
+                modalSubmit();
+            }
+        });
+    </script>
+</body>
+</html>

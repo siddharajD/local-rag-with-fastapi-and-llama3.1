@@ -1,0 +1,296 @@
+"""
+FastAPI application for Local RAG System
+Provides REST API endpoints for document management and question answering
+"""
+
+from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+from typing import Optional
+import os
+import shutil
+from datetime import datetime
+
+from rag_engine import LocalRAGSystem
+
+# Initialize FastAPI app
+app = FastAPI(
+    title="Local RAG API",
+    description="🚀 Retrieval-Augmented Generation API using Ollama (100% Local & Free!)",
+    version="1.0.0",
+    docs_url="/docs",  # Swagger UI at /docs
+    redoc_url="/redoc"  # ReDoc at /redoc
+)
+
+# Initialize RAG system (global variable)
+rag_system = LocalRAGSystem(model_name="llama2")
+system_ready = False
+
+# Pydantic models for request/response
+class QuestionRequest(BaseModel):
+    question: str
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "question": "What is FastAPI?"
+            }
+        }
+
+class AnswerResponse(BaseModel):
+    question: str
+    answer: str
+    sources: list
+    
+class StatusResponse(BaseModel):
+    status: str
+    system_ready: bool
+    documents_count: int
+    timestamp: str
+
+
+# ==================== API ENDPOINTS ====================
+
+@app.get("/", tags=["General"])
+def root():
+    """
+    🏠 Welcome endpoint - Shows available API routes
+    """
+    return {
+        "message": "🚀 Welcome to Local RAG API!",
+        "description": "Powered by Ollama - 100% Local & Free",
+        "documentation": {
+            "swagger_ui": "/docs",
+            "redoc": "/redoc"
+        },
+        "endpoints": {
+            "GET /": "This welcome message",
+            "GET /health": "Check system health",
+            "POST /upload": "Upload a document (PDF or TXT)",
+            "POST /initialize": "Process documents and prepare system",
+            "POST /ask": "Ask a question about your documents",
+            "DELETE /reset": "Clear all documents and reset system"
+        },
+        "workflow": [
+            "1. Upload documents using POST /upload",
+            "2. Initialize system using POST /initialize",
+            "3. Ask questions using POST /ask"
+        ]
+    }
+
+
+@app.get("/health", response_model=StatusResponse, tags=["General"])
+def health_check():
+    """
+    🏥 Check system health and status
+    """
+    docs_folder = "./documents"
+    doc_count = len(os.listdir(docs_folder)) if os.path.exists(docs_folder) else 0
+    
+    return StatusResponse(
+        status="ready" if system_ready else "not_initialized",
+        system_ready=system_ready,
+        documents_count=doc_count,
+        timestamp=datetime.now().isoformat()
+    )
+
+
+@app.post("/upload", tags=["Document Management"])
+async def upload_document(file: UploadFile = File(...)):
+    """
+    📤 Upload a document (PDF or TXT file)
+    
+    - **file**: PDF or TXT file to upload
+    
+    The file will be saved to the documents folder for processing.
+    """
+    
+    # Validate file type
+    allowed_extensions = ['.pdf', '.txt']
+    file_ext = os.path.splitext(file.filename)[1].lower()
+    
+    if file_ext not in allowed_extensions:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File type not supported. Allowed types: {', '.join(allowed_extensions)}"
+        )
+    
+    # Create documents folder if it doesn't exist
+    os.makedirs("./documents", exist_ok=True)
+    
+    # Save file
+    file_path = os.path.join("./documents", file.filename)
+    
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        file_size = os.path.getsize(file_path)
+        
+        return {
+            "message": "✅ File uploaded successfully!",
+            "filename": file.filename,
+            "size_bytes": file_size,
+            "size_kb": round(file_size / 1024, 2),
+            "path": file_path,
+            "next_step": "Call POST /initialize to process this document"
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error uploading file: {str(e)}"
+        )
+
+
+@app.post("/initialize", tags=["System Management"])
+async def initialize_system(background_tasks: BackgroundTasks):
+    """
+    🔄 Initialize RAG system with uploaded documents
+    
+    This endpoint:
+    1. Loads all documents from the documents folder
+    2. Splits them into chunks
+    3. Creates embeddings using Ollama
+    4. Stores them in Chroma vector database
+    
+    ⏱️ This may take 2-5 minutes depending on document size.
+    """
+    global system_ready
+    
+    # Check if documents exist
+    docs_folder = "./documents"
+    if not os.path.exists(docs_folder) or not os.listdir(docs_folder):
+        raise HTTPException(
+            status_code=400,
+            detail="No documents found. Please upload documents first using POST /upload"
+        )
+    
+    try:
+        print("\n" + "="*50)
+        print("🚀 Starting system initialization...")
+        print("="*50 + "\n")
+        
+        # Initialize the RAG system
+        success = rag_system.initialize_from_documents(docs_folder)
+        
+        if success:
+            system_ready = True
+            doc_count = len(os.listdir(docs_folder))
+            
+            print("\n" + "="*50)
+            print("✅ System initialization complete!")
+            print("="*50 + "\n")
+            
+            return {
+                "message": "✅ System initialized successfully!",
+                "status": "ready",
+                "documents_processed": doc_count,
+                "next_step": "You can now ask questions using POST /ask"
+            }
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to initialize system. Check server logs for details."
+            )
+            
+    except Exception as e:
+        system_ready = False
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error during initialization: {str(e)}"
+        )
+
+
+@app.post("/ask", response_model=AnswerResponse, tags=["Question Answering"])
+async def ask_question(request: QuestionRequest):
+    """
+    💬 Ask a question about your documents
+    
+    - **question**: Your question in natural language
+    
+    The system will:
+    1. Search for relevant information in your documents
+    2. Use Ollama LLM to generate an answer
+    3. Return the answer with source citations
+    """
+    
+    if not system_ready:
+        raise HTTPException(
+            status_code=400,
+            detail="System not initialized. Please call POST /initialize first."
+        )
+    
+    try:
+        # Ask the question
+        result = rag_system.ask(request.question)
+        
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result["error"])
+        
+        return AnswerResponse(**result)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing question: {str(e)}"
+        )
+
+
+@app.delete("/reset", tags=["System Management"])
+async def reset_system():
+    """
+    🗑️ Reset system and clear all documents
+    
+    ⚠️ Warning: This will delete all uploaded documents and reset the system.
+    """
+    global system_ready
+    
+    try:
+        # Delete documents folder
+        if os.path.exists("./documents"):
+            shutil.rmtree("./documents")
+            os.makedirs("./documents")
+        
+        # Delete vector database
+        if os.path.exists("./chroma_db"):
+            shutil.rmtree("./chroma_db")
+        
+        # Reset system
+        system_ready = False
+        
+        return {
+            "message": "✅ System reset successfully!",
+            "status": "reset",
+            "note": "You can now upload new documents"
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error resetting system: {str(e)}"
+        )
+
+
+# Run the application
+if __name__ == "__main__":
+    import uvicorn
+    
+    print("\n" + "="*60)
+    print("🚀 Starting Local RAG API Server")
+    print("="*60)
+    print("\n📍 Server will be available at:")
+    print("   • API: http://localhost:8000")
+    print("   • Swagger UI: http://localhost:8000/docs")
+    print("   • ReDoc: http://localhost:8000/redoc")
+    print("\n💡 Tip: Use Swagger UI for interactive testing!")
+    print("="*60 + "\n")
+    
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=8000,
+        log_level="info"
+    )

@@ -1,0 +1,269 @@
+"""
+RAG Engine using Ollama and Chroma
+This handles document processing and question answering
+"""
+
+import os
+from typing import List, Dict
+import requests
+import json
+
+# LangChain imports - Updated for current versions
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.document_loaders import PyPDFLoader, TextLoader
+from langchain_community.vectorstores import Chroma
+from langchain_community.embeddings import OllamaEmbeddings
+
+
+class OllamaLLM:
+    """Custom wrapper for Ollama LLM"""
+    
+    def __init__(self, model_name: str = "llama2"):
+        self.model_name = model_name
+        self.base_url = "http://localhost:11434"
+    
+    def generate(self, prompt: str) -> str:
+        """Generate text using Ollama"""
+        url = f"{self.base_url}/api/generate"
+        
+        payload = {
+            "model": self.model_name,
+            "prompt": prompt,
+            "stream": False
+        }
+        
+        try:
+            response = requests.post(url, json=payload, timeout=120)
+            response.raise_for_status()
+            return response.json()["response"]
+        except Exception as e:
+            return f"Error generating response: {str(e)}"
+
+
+class LocalRAGSystem:
+    """RAG system using local Ollama models and Chroma"""
+    
+    def __init__(self, model_name: str = "llama2"):
+        """Initialize the RAG system"""
+        print("🚀 Initializing Local RAG System...")
+        
+        # Initialize embeddings using Ollama
+        self.embeddings = OllamaEmbeddings(
+            model="llama2",  # Using llama2 for embeddings
+            base_url="http://localhost:11434"
+        )
+        
+        # Initialize LLM
+        self.llm = OllamaLLM(model_name=model_name)
+        
+        # Vector store will be created later
+        self.vectorstore = None
+        
+        print("✅ RAG System initialized!")
+    
+    def load_documents(self, folder_path: str) -> List:
+        """Load all documents from a folder"""
+        documents = []
+        
+        if not os.path.exists(folder_path):
+            print(f"❌ Folder {folder_path} does not exist!")
+            return documents
+        
+        print(f"📂 Loading documents from {folder_path}...")
+        
+        for filename in os.listdir(folder_path):
+            file_path = os.path.join(folder_path, filename)
+            
+            try:
+                # Load PDF files
+                if filename.lower().endswith('.pdf'):
+                    loader = PyPDFLoader(file_path)
+                    docs = loader.load()
+                    documents.extend(docs)
+                    print(f"  ✅ Loaded PDF: {filename} ({len(docs)} pages)")
+                
+                # Load text files
+                elif filename.lower().endswith('.txt'):
+                    loader = TextLoader(file_path, encoding='utf-8')
+                    docs = loader.load()
+                    documents.extend(docs)
+                    print(f"  ✅ Loaded text file: {filename}")
+                
+            except Exception as e:
+                print(f"  ⚠️  Error loading {filename}: {str(e)}")
+        
+        print(f"📊 Total documents loaded: {len(documents)}")
+        return documents
+    
+    def split_documents(self, documents: List) -> List:
+        """Split documents into smaller chunks"""
+        print("✂️  Splitting documents into chunks...")
+        
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000,      # Each chunk is ~1000 characters
+            chunk_overlap=200,    # 200 character overlap between chunks
+            length_function=len,
+        )
+        
+        splits = text_splitter.split_documents(documents)
+        print(f"✅ Created {len(splits)} chunks")
+        
+        return splits
+    
+    def create_vectorstore(self, splits: List, persist_directory: str = "./chroma_db"):
+        """Create vector database from document chunks"""
+        print("🔢 Creating vector database (this may take a few minutes)...")
+        
+        try:
+            # Create Chroma vectorstore
+            self.vectorstore = Chroma.from_documents(
+                documents=splits,
+                embedding=self.embeddings,
+                persist_directory=persist_directory
+            )
+            
+            print(f"✅ Vector database created with {len(splits)} embeddings!")
+            print(f"💾 Database saved to {persist_directory}")
+            
+        except Exception as e:
+            print(f"❌ Error creating vector database: {str(e)}")
+            raise
+    
+    def load_vectorstore(self, persist_directory: str = "./chroma_db"):
+        """Load existing vector database"""
+        print("📥 Loading existing vector database...")
+        
+        try:
+            self.vectorstore = Chroma(
+                persist_directory=persist_directory,
+                embedding_function=self.embeddings
+            )
+            print("✅ Vector database loaded successfully!")
+            
+        except Exception as e:
+            print(f"❌ Error loading vector database: {str(e)}")
+            raise
+    
+    def retrieve_relevant_docs(self, query: str, k: int = 3) -> List[Dict]:
+        """Retrieve relevant documents for a query"""
+        if not self.vectorstore:
+            return []
+        
+        # Search for similar documents
+        docs = self.vectorstore.similarity_search(query, k=k)
+        
+        # Format results
+        results = []
+        for i, doc in enumerate(docs):
+            results.append({
+                "content": doc.page_content,
+                "metadata": doc.metadata,
+                "relevance_rank": i + 1
+            })
+        
+        return results
+    
+    def generate_answer(self, query: str, context_docs: List[Dict]) -> str:
+        """Generate answer using retrieved context"""
+        
+        # Prepare context from retrieved documents
+        context = "\n\n".join([
+            f"Document {doc['relevance_rank']}:\n{doc['content']}"
+            for doc in context_docs
+        ])
+        
+        # Create prompt
+        prompt = f"""You are a helpful assistant. Use the following context to answer the question. If you cannot answer based on the context, say so.
+
+Context:
+{context}
+
+Question: {query}
+
+Answer: """
+        
+        # Generate response using Ollama
+        print("🤖 Generating answer...")
+        answer = self.llm.generate(prompt)
+        
+        return answer
+    
+    def ask(self, query: str) -> Dict:
+        """Main method to ask a question"""
+        if not self.vectorstore:
+            return {
+                "error": "System not initialized. Please load documents first.",
+                "answer": None
+            }
+        
+        print(f"\n❓ Question: {query}")
+        
+        # Retrieve relevant documents
+        print("🔍 Searching for relevant information...")
+        relevant_docs = self.retrieve_relevant_docs(query, k=3)
+        
+        if not relevant_docs:
+            return {
+                "question": query,
+                "answer": "I couldn't find any relevant information in the documents.",
+                "sources": []
+            }
+        
+        print(f"📚 Found {len(relevant_docs)} relevant chunks")
+        
+        # Generate answer
+        answer = self.generate_answer(query, relevant_docs)
+        
+        # Format sources
+        sources = [
+            {
+                "content_preview": doc["content"][:200] + "...",
+                "metadata": doc["metadata"]
+            }
+            for doc in relevant_docs
+        ]
+        
+        result = {
+            "question": query,
+            "answer": answer.strip(),
+            "sources": sources
+        }
+        
+        print("✅ Answer generated!\n")
+        return result
+    
+    def initialize_from_documents(self, folder_path: str = "./documents") -> bool:
+        """Complete initialization from document folder"""
+        try:
+            # Load documents
+            documents = self.load_documents(folder_path)
+            
+            if not documents:
+                print("❌ No documents found!")
+                return False
+            
+            # Split into chunks
+            splits = self.split_documents(documents)
+            
+            # Create vector database
+            self.create_vectorstore(splits)
+            
+            print("\n🎉 RAG System ready to answer questions!\n")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Initialization failed: {str(e)}")
+            return False
+
+
+# Test the system if run directly
+if __name__ == "__main__":
+    rag = LocalRAGSystem()
+    
+    # Initialize from documents folder
+    success = rag.initialize_from_documents("./documents")
+    
+    if success:
+        # Test with a question
+        result = rag.ask("What is this document about?")
+        print(f"Answer: {result['answer']}")
