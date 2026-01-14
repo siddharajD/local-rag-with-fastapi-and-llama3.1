@@ -6,6 +6,9 @@
 - [FastAPI](https://fastapi.tiangolo.com/) - API framework
 - [Meta AI](https://ai.meta.com/) - Llama 3.1 model
 
+
+# Demo Recording: https://drive.google.com/file/d/1auvqtcrCCsGC4wKYiFM4vCGriVAaLJBD/view?usp=sharing
+
 ## 📚 Objective
 
 A complete, production-ready Retrieval-Augmented Generation (RAG) system running 100% locally on Mac M1 Pro. This project demonstrates advanced RAG techniques, streaming responses, conversation history, and a Matrix-themed web interface - all powered by Ollama and open-source models.
